@@ -10,10 +10,4 @@ Offline bulk OUI lookup for Cisco `show mac address-table` output.
 - UI and CSV both sorted numerically by **Interface**
 - Windows-friendly; can be built as a single `.exe`
 
-## Run
-
-```bash
-py -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-py oui_lookup_gui.pyw
+<img width="1116" height="693" alt="image" src="https://github.com/user-attachments/assets/a9f22e85-008d-4e09-a8bc-24e975e70d82" />
