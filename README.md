@@ -67,12 +67,6 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
 ```
 
-If your company uses a custom root CA for TLS interception, either import via **Import DB** (recommended) or set:
-
-```powershell
-setx REQUESTS_CA_BUNDLE "C:\Path\to\corp_ca.pem"
-```
-
 ---
 
 ## License
