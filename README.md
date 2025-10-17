@@ -2,12 +2,81 @@
 
 Offline bulk OUI lookup for Cisco `show mac address-table` output.
 
-- Paste or load text
-- Keeps **VLAN** + **Interface** with each MAC
-- Optional **Exclude Port-Channels (Po\*)**
-- OUI via Wireshark `manuf` (cached locally)
-- CSV export (`Hostname | VLAN | Interface | Mac | Vendor`)
-- UI and CSV both sorted numerically by **Interface**
+- Paste or load text  
+- Keeps **VLAN** + **Interface** with each MAC  
+- Optional **Exclude Port-Channels (Po*)**  
+- CSV export (`Hostname | VLAN | Interface | Mac | Vendor`)  
+- UI and CSV both sorted numerically by **Interface**  
 - Windows-friendly; can be built as a single `.exe`
+
+---
+
+## Run from source
+
+```bash
+py -m venv .venv
+.\.venv\Scriptsctivate
+pip install -r requirements.txt
+py oui_lookup_gui.pyw
+```
+
+## Build a Windows EXE
+
+```bash
+pip install pyinstaller
+py -m PyInstaller --noconfirm --noconsole --onefile --name OUILookup oui_lookup_gui.pyw
+# output: dist/OUILookup.exe
+```
+
+---
+
+## Getting the vendor database (`manuf`)
+
+Some networks (corp TLS inspection) block the app from downloading the Wireshark **`manuf`** file. If the app can’t pull it, use the standalone downloader and import the file:
+
+1. Double-click the standalone downloader **`get_manuf.pyw`**.  
+   It saves a file named **`manuf`** in the **same folder** as the script.
+2. In the GUI, click **Import DB** and select that `manuf` file.
+3. The app will cache a copy at `%USERPROFILE%\.oui_lookup\manuf` for future runs.
+
+> If your network allows it, **Update DB** will try to download `manuf` directly. If it fails, use the standalone script above.
+
+### Where the DB lives (after import/update)
+```
+%USERPROFILE%\.oui_lookup\manuf
+```
+
+---
+
+## Notes
+
+- CPU rows are skipped automatically.  
+- Unknown OUIs show `Unknown`.  
+- Export default filename: `<SourceDevice>-MAC-OUI.csv` (e.g., `73-01-SW01-MAC-OUI.csv`).  
+- The **Import DB** button lets you run fully offline.  
+- Auto-detects **Source Device** from pasted prompts like `SW01#` or `SW01>`.
+
+---
+
+## Troubleshooting (for builders)
+
+If PowerShell blocks venv activation:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+If your company uses a custom root CA for TLS interception, either import via **Import DB** (recommended) or set:
+
+```powershell
+setx REQUESTS_CA_BUNDLE "C:\Path\to\corp_ca.pem"
+```
+
+---
+
+## License
+MIT
+
 
 <img width="1116" height="693" alt="image" src="https://github.com/user-attachments/assets/a9f22e85-008d-4e09-a8bc-24e975e70d82" />
