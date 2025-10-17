@@ -15,7 +15,7 @@ Offline bulk OUI lookup for Cisco `show mac address-table` output.
 
 ```bash
 py -m venv .venv
-.\.venv\Scriptsctivate
+.\.venv\ScriptsActivate
 pip install -r requirements.txt
 py oui_lookup_gui.pyw
 ```
