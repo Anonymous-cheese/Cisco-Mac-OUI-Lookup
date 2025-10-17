@@ -1,20 +1,8 @@
-# Python
-__pycache__/
+﻿__pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-*.egg-info/
 .venv/
-venv/
-
-# Build artifacts
 build/
 dist/
 *.spec
-
-# OS
 .DS_Store
 Thumbs.db
-
-# Cache
-/.pytest_cache/

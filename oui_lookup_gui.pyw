@@ -12,19 +12,42 @@ from tkinter import ttk, filedialog, messagebox
 MANUF_URL="https://www.wireshark.org/download/automated/data/manuf"
 CACHE_DIR=os.path.join(Path.home(),".oui_lookup")
 CACHE_FILE=os.path.join(CACHE_DIR,"manuf")
+ALT_CA_FILE=os.path.join(CACHE_DIR,"corp_ca.pem")
+
+def _verify_arg():
+    p=os.environ.get("REQUESTS_CA_BUNDLE")
+    if p and os.path.exists(p): return p
+    if os.path.exists(ALT_CA_FILE): return ALT_CA_FILE
+    return True
 
 def fetch_manuf():
     os.makedirs(CACHE_DIR,exist_ok=True)
-    r=requests.get(MANUF_URL,timeout=30)
+    r=requests.get(MANUF_URL,timeout=30,verify=_verify_arg())
     r.raise_for_status()
     with open(CACHE_FILE,"wb") as f:
         f.write(r.content)
 
+def import_manuf_from_file():
+    p=filedialog.askopenfilename(title="Select Wireshark manuf file",filetypes=[("manuf or text","*.*")])
+    if not p: return None
+    os.makedirs(CACHE_DIR,exist_ok=True)
+    with open(p,"rb") as src, open(CACHE_FILE,"wb") as dst:
+        dst.write(src.read())
+    return CACHE_FILE
+
+def _load_lines_from(path):
+    with open(path,"r",encoding="utf-8",errors="ignore") as f:
+        return f.readlines()
+
 def load_manuf():
     if not os.path.exists(CACHE_FILE):
-        fetch_manuf()
-    with open(CACHE_FILE,"r",encoding="utf-8",errors="ignore") as f:
-        lines=f.readlines()
+        try:
+            fetch_manuf()
+        except Exception:
+            chosen=import_manuf_from_file()
+            if not chosen:
+                raise
+    lines=_load_lines_from(CACHE_FILE)
     buckets={}
     for L in lines:
         L=L.strip()
@@ -95,21 +118,34 @@ def iface_sort_key(s):
     w=IFACE_WEIGHT.get(p,5)
     return (w,nums)
 
+def sanitize_filename(s):
+    s=re.sub(r'[<>:"/\\|?*]+','-',s).strip()
+    return s or "MAC-OUI"
+
+def detect_hostname(text):
+    for line in text.splitlines():
+        m=re.match(r'^\s*([A-Za-z0-9._:-]+)[>#]', line)
+        if m:
+            return m.group(1)
+    return ""
+
 class App:
     def __init__(self,root):
         self.root=root
         self.root.title("Cisco MAC OUI Resolver")
-        self.buckets,self.masks=load_manuf()
+        try:
+            self.buckets,self.masks=load_manuf()
+        except Exception as e:
+            messagebox.showerror("Error loading vendor DB", str(e))
+            self.buckets,self.masks={},[]
         top=ttk.Frame(root); top.pack(fill="both",expand=True,padx=10,pady=10)
         srcrow=ttk.Frame(top); srcrow.pack(fill="x",pady=(0,6))
         ttk.Label(srcrow,text="Source Device:").pack(side="left")
         self.src_var=tk.StringVar()
-        self.src_entry=ttk.Entry(srcrow,textvariable=self.src_var,width=32)
-        self.src_entry.pack(side="left",padx=(6,12))
+        ttk.Entry(srcrow,textvariable=self.src_var,width=32).pack(side="left",padx=(6,12))
         ttk.Label(srcrow,text="MAC Format:").pack(side="left")
         self.mac_fmt=tk.StringVar(value="AA:BB:CC:DD:EE:FF")
-        self.mac_fmt_box=ttk.Combobox(srcrow,textvariable=self.mac_fmt,values=["As seen","AA:BB:CC:DD:EE:FF","AAAA.BBBB.CCCC"],state="readonly",width=20)
-        self.mac_fmt_box.pack(side="left",padx=(6,12))
+        ttk.Combobox(srcrow,textvariable=self.mac_fmt,values=["As seen","AA:BB:CC:DD:EE:FF","AAAA.BBBB.CCCC"],state="readonly",width=20).pack(side="left",padx=(6,12))
         self.exclude_po=tk.BooleanVar(value=True)
         ttk.Checkbutton(srcrow,text="Exclude Port-Channels (Po*)",variable=self.exclude_po).pack(side="left")
         btns=ttk.Frame(top); btns.pack(fill="x",pady=(6,6))
@@ -118,9 +154,9 @@ class App:
         ttk.Button(btns,text="Lookup",command=self.lookup).pack(side="left",padx=4)
         ttk.Button(btns,text="Export CSV",command=self.export_csv).pack(side="left",padx=4)
         ttk.Button(btns,text="Update DB",command=self.update_db).pack(side="left",padx=4)
+        ttk.Button(btns,text="Import DB",command=self.import_db).pack(side="left",padx=4)
         ttk.Button(btns,text="Clear",command=self.clear_all).pack(side="left",padx=4)
-        self.txt=tk.Text(top,height=10,wrap="none")
-        self.txt.pack(fill="x")
+        self.txt=tk.Text(top,height=10,wrap="none"); self.txt.pack(fill="x")
         cols=("Hostname","VLAN","Interface","Mac","Vendor")
         self.tree=ttk.Treeview(top,columns=cols,show="headings",height=18)
         for c in cols: self.tree.heading(c,text=c)
@@ -134,30 +170,34 @@ class App:
         ttk.Label(root,textvariable=self.status_var,anchor="w").pack(fill="x",padx=10,pady=(0,10))
 
     def set_status(self,msg):
-        self.status_var.set(msg)
-        self.root.update_idletasks()
+        self.status_var.set(msg); self.root.update_idletasks()
+
+    def maybe_autofill_hostname(self, text):
+        if not self.src_var.get().strip():
+            h=detect_hostname(text)
+            if h: self.src_var.set(h)
 
     def paste_clipboard(self):
         try:
-            data=self.root.clipboard_get()
-            self.txt.insert("end",data if data.endswith("\n") else data+"\n")
+            d=self.root.clipboard_get()
+            if not d.endswith("\n"): d=d+"\n"
+            self.txt.insert("end",d)
+            self.maybe_autofill_hostname(d)
         except tk.TclError:
             pass
 
     def load_file(self):
         p=filedialog.askopenfilename(title="Open MAC table",filetypes=[("Text","*.txt"),("All","*.*")])
         if not p: return
-        try:
-            with open(p,"r",encoding="utf-8",errors="ignore") as f:
-                self.txt.insert("end",f.read())
-            self.set_status(f"Loaded {os.path.basename(p)}")
-        except Exception as e:
-            messagebox.showerror("Error",str(e))
+        with open(p,"r",encoding="utf-8",errors="ignore") as f:
+            content=f.read()
+        self.txt.insert("end",content)
+        self.maybe_autofill_hostname(content)
+        self.set_status(f"Loaded {os.path.basename(p)}")
 
     def clear_all(self):
         self.txt.delete("1.0","end")
-        for i in self.tree.get_children():
-            self.tree.delete(i)
+        for i in self.tree.get_children(): self.tree.delete(i)
         self.set_status("Cleared")
 
     def update_db(self):
@@ -167,22 +207,36 @@ class App:
                 fetch_manuf()
                 self.buckets,self.masks=load_manuf()
                 self.set_status("Vendor DB updated")
-            except Exception as e:
-                self.set_status("Update failed")
-                messagebox.showerror("Error",str(e))
+            except Exception:
+                self.set_status("Download failed; choose local manuf")
+                try:
+                    chosen=import_manuf_from_file()
+                    if chosen:
+                        self.buckets,self.masks=load_manuf()
+                        self.set_status("Vendor DB loaded from local file")
+                except Exception as e:
+                    messagebox.showerror("Error",str(e))
         threading.Thread(target=run,daemon=True).start()
+
+    def import_db(self):
+        chosen=import_manuf_from_file()
+        if not chosen:
+            self.set_status("Import cancelled"); return
+        try:
+            self.buckets,self.masks=load_manuf()
+            self.set_status("Vendor DB imported")
+        except Exception as e:
+            messagebox.showerror("Error",str(e))
 
     def lookup(self):
         raw=self.txt.get("1.0","end")
+        if not self.src_var.get().strip():
+            self.maybe_autofill_hostname(raw)
         src=self.src_var.get().strip() or ""
         rows=parse_ios_mac_table(raw)
-        if not rows:
-            self.set_status("No parsable rows")
-            return
-        excl=self.exclude_po.get()
-        fmt=self.mac_fmt.get()
-        for i in self.tree.get_children():
-            self.tree.delete(i)
+        if not rows: self.set_status("No parsable rows"); return
+        excl=self.exclude_po.get(); fmt=self.mac_fmt.get()
+        for i in self.tree.get_children(): self.tree.delete(i)
         self.set_status("Resolving...")
         def run():
             resolved=[]
@@ -192,28 +246,22 @@ class App:
                 vendor=lookup_vendor(mac,self.buckets,self.masks)
                 resolved.append((src,vlan,iface,mac_out,vendor))
             resolved.sort(key=lambda r: iface_sort_key(r[2]))
-            for r in resolved:
-                self.tree.insert("",tk.END,values=r)
+            for r in resolved: self.tree.insert("",tk.END,values=r)
             self.set_status(f"Resolved {len(resolved)} rows")
         threading.Thread(target=run,daemon=True).start()
 
     def export_csv(self):
-        if not self.tree.get_children():
-            self.set_status("Nothing to export")
-            return
-        p=filedialog.asksaveasfilename(defaultextension=".csv",filetypes=[("CSV","*.csv")],initialfile="mac_oui_export.csv")
+        if not self.tree.get_children(): self.set_status("Nothing to export"); return
+        base=sanitize_filename(self.src_var.get().strip())
+        default=f"{base}-MAC-OUI.csv" if base else "MAC-OUI.csv"
+        p=filedialog.asksaveasfilename(defaultextension=".csv",filetypes=[("CSV","*.csv")],initialfile=default)
         if not p: return
-        try:
-            rows=[self.tree.item(iid,"values") for iid in self.tree.get_children()]
-            rows.sort(key=lambda r: iface_sort_key(r[2]))
-            with open(p,"w",newline="",encoding="utf-8") as f:
-                w=csv.writer(f)
-                w.writerow(["Hostname","VLAN","Interface","Mac","Vendor"])
-                for r in rows:
-                    w.writerow(r)
-            self.set_status(f"Exported {os.path.basename(p)}")
-        except Exception as e:
-            messagebox.showerror("Error",str(e))
+        rows=[self.tree.item(iid,"values") for iid in self.tree.get_children()]
+        rows.sort(key=lambda r: iface_sort_key(r[2]))
+        with open(p,"w",newline="",encoding="utf-8") as f:
+            w=csv.writer(f); w.writerow(["Hostname","VLAN","Interface","Mac","Vendor"])
+            for r in rows: w.writerow(r)
+        self.set_status(f"Exported {os.path.basename(p)}")
 
 if __name__=="__main__":
     root=tk.Tk()
