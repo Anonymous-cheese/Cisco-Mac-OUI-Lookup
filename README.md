@@ -78,5 +78,7 @@ setx REQUESTS_CA_BUNDLE "C:\Path\to\corp_ca.pem"
 ## License
 MIT
 
+<img width="1153" height="729" alt="image" src="https://github.com/user-attachments/assets/aea157b3-b447-4d14-af33-385f67a257c6" />
+
 
 <img width="1116" height="693" alt="image" src="https://github.com/user-attachments/assets/a9f22e85-008d-4e09-a8bc-24e975e70d82" />
